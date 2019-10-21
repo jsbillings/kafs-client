@@ -32,6 +32,7 @@
 #include <sys/socket.h>
 #include <krb5/krb5.h>
 #include <linux/if_alg.h>
+#include <getopt.h>
 
 struct rxrpc_key_sec2_v1 {
         uint32_t        kver;                   /* key payload interface version */
@@ -345,38 +346,77 @@ int main(int argc, char **argv)
 	krb5_context k5_ctx;
 	krb5_ccache cc;
 	krb5_creds search_cred, *creds;
+        int c;
+        static int opt_verbose=0;
+        key_serial_t opt_keyring = KEY_SPEC_SESSION_KEYRING;
 
-	if (argc < 1 || argc > 3 ||
-	    (argc == 2 && strcmp(argv[1], "--help") == 0)) {
-		fprintf(stderr, "Usage: aklog-kafs [<cell> [<realm>]]\n");
-		exit(1);
-	}
+        while (1) {
+          static struct option long_options[] =
+            {
+             {"verbose", no_argument, &opt_verbose,  1},
+             {"user",    no_argument, 0,            'u'},
+             {"help",    no_argument, 0,            'h'},
+             {0,0,0,0}
+            };
+          int option_index = 0;
+          c = getopt_long (argc, argv, "uh",long_options, &option_index);
+          if (c == -1)
+            break;
+          
+          switch(c) {
+          case 0:
+            if (long_options[option_index].flag != 0)
+              break;
+            printf("option %s", long_options[option_index].name);
+            if (optarg)
+              printf(" with arg %s", optarg);
+            printf("\n");
+            break;
+          case 'u':
+            opt_keyring = KEY_SPEC_USER_KEYRING;
+            break;
+          case 'h':
+            printf("Usage: aklog-kafs [--verbose|-v] [--user|-u] [<cell> [<realm>]]\n");
+            exit(0);
+            break;
+          case '?':
+            break;
+          default:
+            abort();
+          }
+        }
+        if (optind < argc) {
+          cell = argv[optind++];
+          if (optind < argc) {
+            realm = strdup(argv[optind]);
+            OSZERROR(realm, "strdup");
+          } else {
+            realm = strdup(cell);
+            OSZERROR(realm, "strdup");
+          }
+        } else {
+          cell = get_default_cell();
+          realm = strdup(cell);
+          OSZERROR(realm, "strdup");
+        }
 
-	if (argc == 1)
-		cell = get_default_cell();
-	else
-		cell = argv[1];
 
-	if (argc == 3) {
-		realm = strdup(argv[2]);
-		OSZERROR(realm, "strdup");
-	} else {
-		realm = strdup(cell);
-		OSZERROR(realm, "strdup");
-		for (p = realm; *p; p++)
-			*p = toupper(*p);
-	}
+        for (p = cell; *p; p++)
+          *p = tolower(*p);
+        for (p = realm; *p; p++)
+          *p = toupper(*p);
 
-	for (p = cell; *p; p++)
-		*p = tolower(*p);
 
 	ret = asprintf(&princ, "afs/%s@%s", cell, realm);
 	OSERROR(ret, "asprintf");
 	ret = asprintf(&desc, "afs@%s", cell);
 	OSERROR(ret, "asprintf");
 
-	printf("CELL %s\n", cell);
-	printf("PRINC %s\n", princ);
+        if (opt_verbose == 1) {
+        	printf("CELL %s\n", cell);
+                printf("REALM %s\n", realm);
+        	printf("PRINC %s\n", princ);
+        }
 
 	kresult = krb5_init_context(&k5_ctx);
 	if (kresult) { fprintf(stderr, "krb5_init_context failed\n"); exit(1); }
@@ -403,9 +443,10 @@ int main(int argc, char **argv)
 		perror("calloc");
 		exit(1);
 	}
-
-	printf("plen=%zu tklen=%u rk=%zu\n",
-	       plen, creds->ticket.length, sizeof(*payload));
+        if (opt_verbose == 1) {
+          printf("plen=%zu tklen=%u rk=%zu\n",
+                 plen, creds->ticket.length, sizeof(*payload));
+        }
 
 	/* use version 1 of the key data interface */
 	payload->kver           = 1;
@@ -417,7 +458,7 @@ int main(int argc, char **argv)
 	derive_key(creds, payload->session_key);
 	memcpy(payload->ticket, creds->ticket.data, creds->ticket.length);
 
-	ret = add_key("rxrpc", desc, payload, plen, KEY_SPEC_SESSION_KEYRING);
+	ret = add_key("rxrpc", desc, payload, plen, opt_keyring);
 	OSERROR(ret, "add_key");
 
 	krb5_free_creds(k5_ctx, creds);
