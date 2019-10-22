@@ -4,13 +4,15 @@
 
 Name:		kafs-client
 Version:	0.5
-Release:	1%{?dist}%{?buildid}
+Release:	1.1%{?dist}%{?buildid}
 Summary:	The basic tools for kAFS and mounter for the AFS dynamic root
 License:	GPLv2+
 URL:		https://www.infradead.org/~dhowells/kafs/
 Source0:	https://www.infradead.org/~dhowells/kafs/kafs-client-%{version}.tar.bz2
 
 Requires: filesystem-afs
+Requires(post): %{_sbindir}/alternatives
+Requires(preun): %{_sbindir}/alternatives
 BuildRequires: krb5-devel
 BuildRequires: keyutils-libs-devel
 BuildRequires: openssl-devel
@@ -107,12 +109,25 @@ ln -s aklog-kafs %{buildroot}/%{_bindir}/aklog
 
 %post
 %systemd_post afs.mount
+%{_sbindir}/alternatives \
+ --install %{_bindir}/aklog aklog %{_bindir}/aklog-kafs 100
+
 
 %preun
 %systemd_preun afs.mount
+#only remove in case of erase (but not at upgrade)
+if [ $1 -eq 0 ] ; then
+    %{_sbindir}/alternatives --remove aklog %{_bindir}/aklog-kafs
+fi
 
 %postun
 %systemd_postun_with_restart afs.mount
+if [ "$1" -ge "1" ]; then
+    if [ "`readlink %{_sysconfdir}/alternatives/aklog`" == "%{_bindir}/aklog-kafs" ]; then
+        %{_sbindir}/alternatives --set aklog %{_bindir}/aklog-kafs
+    fi
+fi
+
 
 %files
 %doc README
@@ -152,6 +167,10 @@ ln -s aklog-kafs %{buildroot}/%{_bindir}/aklog
 - kafs-preload: Fix the debugging output.
 - kafs-dns: Use the right name in the help output and syslog logging.
 - Rename the etc.conf source to client.conf as that's the installation name
+
+* Wed May 20 2020 Jonathan Billings <jsbillings@jsbillings.org> 0.4-2
+- Update aklog-kafs to handle arguments and support a user keyring
+- Use 'alternatives' to install an aklog symlink
 
 * Wed May 20 2020 David Howells <dhowells@redhat.com> 0.4-1
 - Use AF_ALG rather than OpenSSL's libcrypto.
