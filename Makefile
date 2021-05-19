@@ -123,12 +123,13 @@ RPMBUILDDIRS := \
 RPMFLAGS := \
 	--define "buildid $(BUILDID)"
 
-rpm: tarball
+srpm: tarball
 	mkdir -p rpmbuild
 	chmod ug-s rpmbuild
 	mkdir -p rpmbuild/{SPECS,SOURCES,BUILD,BUILDROOT,RPMS,SRPMS}
 	cp $(ZTARBALL) $(ZSRCBALL)
 	rpmbuild -ts $(ZSRCBALL) --define "_srcrpmdir rpmbuild/SRPMS" $(RPMFLAGS)
+rpm: srpm
 	rpmbuild --rebuild $(SRPM) $(RPMBUILDDIRS) $(RPMFLAGS)
 
 rpmlint: rpm
